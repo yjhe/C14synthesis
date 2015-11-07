@@ -76,8 +76,8 @@ for i in set(pltbiome): # loop over biomes
     ax1.set_color_cycle([cm(1.*jj/numcolr) for jj in range(numcolr)])
     ax2.set_color_cycle([cm(1.*jj/numcolr) for jj in range(numcolr)])
     for kk in set(biomedataid): # loop over profiles in current biome
-        Y = (data[data.index==kk]['Layer_top'].values.astype(float)+\
-            data[data.index==kk]['Layer_bottom'].values.astype(float))/2.0
+        Y = (data[data.index==kk]['Layer_top_norm'].values.astype(float)+\
+            data[data.index==kk]['Layer_bottom_norm'].values.astype(float))/2.0
         X1 = data[data.index==kk]['D14C_BulkLayer'].astype(float)
         if var[pltvar] == 'pct_C':    
             X2 = data[data.index==kk]['pct_C'].astype(float)/100.0      
@@ -100,7 +100,7 @@ for i in set(pltbiome): # loop over biomes
                transform = ax1.transAxes,fontsize=16)
     dum = dum + 1 
 fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
-matplotlib.rcParams.update({'font.size': 14}) 
+matplotlib.rcParams.update({'font.size': 10}) 
 fig.savefig('../figures/biome_profiles/withGCBdata/%s_%s.png'%(biome[pltbiome[0]],biome[pltbiome[1]]))
 
 #%% plot 14C profile of different soil orders
@@ -128,8 +128,8 @@ for i in pltorder: # loop over biomes
     ax1.set_color_cycle([cm(1.*jj/numcolr) for jj in range(numcolr)])
     ax2.set_color_cycle([cm(1.*jj/numcolr) for jj in range(numcolr)])
     for kk in set(biomedataid): # loop over profiles in current biome
-        Y = (data[data.index==kk]['Layer_top'].values.astype(float)+\
-            data[data.index==kk]['Layer_bottom'].values.astype(float))/2.0
+        Y = (data[data.index==kk]['Layer_top_norm'].values.astype(float)+\
+            data[data.index==kk]['Layer_bottom_norm'].values.astype(float))/2.0
         X1 = data[data.index==kk]['D14C_BulkLayer'].astype(float)
         if var[pltvar] == 'pct_C':    
             X2 = data[data.index==kk]['pct_C'].astype(float)/100.0      
@@ -153,7 +153,7 @@ for i in pltorder: # loop over biomes
     dum = dum + 1 
 fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
 matplotlib.rcParams.update({'font.size': 14}) 
-fig.savefig('../figures/biome_profiles/withGCBdata/%s_%s.png'%(order[pltorder[0]],order[pltorder[1]]))
+#fig.savefig('../figures/biome_profiles/withGCBdata/%s_%s.png'%(order[pltorder[0]],order[pltorder[1]]))
 #%% plot C-averaged D14C and depth/SOC content
 filename = 'Non_peat_data_synthesis.csv'
 Cave14C = prep.getCweightedD14C2(filename)

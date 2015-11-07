@@ -1142,8 +1142,8 @@ nrows, ncols = 7,7
 fig, axes = plt.subplots(nrows=nrows,ncols=ncols,figsize=(10,15),sharey=True)
 plot_obs_biomepf_pairwise(axes)
 plt.tight_layout()
-#plt.savefig('..\\figures\\biome_profiles\\withGCBdata\\biome_averaged_profiles_pairwise.pdf',
-#            dpi=300)
+plt.savefig('..\\figures\\biome_profiles\\withGCBdata\\biome_averaged_profiles_pairwise_modifybiome.pdf',
+            dpi=300)
 
 #%% pctC, BD, global extrapolation and global total
 

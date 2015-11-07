@@ -1104,13 +1104,13 @@ def prep_lnrinterp(data):
 
 def prep_expinterp(data):
     '''
-    Given a profie id, if BD and pctC data are more than 3 for each, linear interp at 1cm
+    Given a profie id, if BD and pctC data are more than 3 for each, exp interp at 1cm
     interval of whole profile. return new dataframe.
     In contrast to 'prep_increment' which assumes homogeneous for each layer.
     params: 
         {dataframe} data
     return:
-        {dataframe} new df with BD, pctC, D14C and depth linear interpolated at 1cm increment
+        {dataframe} new df with BD, pctC, D14C and depth exp interpolated at 1cm increment
     '''   
     def expfunc(x, K, I):
         '''
@@ -1144,7 +1144,7 @@ def prep_expinterp(data):
             tmpdf.loc[i:i,'Layer_depth_incre'] = incre
             layerbotori = np.array(data.loc[i:i,'Layer_bottom']).astype(float)
             layertop = np.array(data.loc[i:i,'Layer_top']).astype(float)
-            layerbot = np.mean(np.c_[layertop, layerbotori], axis=1)
+            layerbot = np.mean(np.c_[layertop, layerbotori], axis=1) # use mid-point depth
             bd = np.array(data.loc[i:i,'BulkDensity']).astype(float)
             d14C = np.array(data.loc[i:i,'D14C_BulkLayer']).astype(float)
             pctC = np.array(data.loc[i:i,'pct_C']).astype(float)

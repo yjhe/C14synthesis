@@ -1813,6 +1813,7 @@ myplt.add_regress(shallowdf.MAT.astype(float), shallowdf.D14C_BulkLayer.astype(f
 shallowdf.plot(kind='scatter',x='MAP',y='D14C_BulkLayer')
 deepdf.plot(kind='scatter',x='MAT',y='D14C_BulkLayer')
 myplt.add_regress(deepdf.MAT.astype(float), deepdf.D14C_BulkLayer.astype(float))
+
 deepdf.plot(kind='scatter',x='MAP',y='D14C_BulkLayer')
 
 #%% examine interpolation
@@ -1822,6 +1823,7 @@ data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprow
 data_exp, statprop_exp = prep.prep_expinterp(data)
 data_exp_goodfit = data_exp.loc[statprop_exp.D14C_R2>0.7]
 out = []
+# calculate mean rmse at each layer
 for prof in data_exp_goodfit.index.unique():
     m = 0; nlayer = 0
     for n,(t,b) in enumerate(np.round(data.loc[prof:prof,['Layer_top','Layer_bottom']].values)):
@@ -1838,7 +1840,19 @@ out = np.array(out)
 plt.hist(out[~np.isnan(out)],bins=50)    
 plt.gca().set_xlim([0, 2000])
 
-
+# plot goodfit
+pid_goodfit = data_exp_goodfit.index.unique()
+for p in pid_goodfit[1:10]:
+    fig = plt.figure()
+    ax = fig.add_axes([0.05,0.05,0.9,0.9])
+    ax.scatter(data.loc[p:p,'D14C_BulkLayer'], 
+               data.loc[p:p,['Layer_top','Layer_bottom']].mean(axis=1), marker='x')
+    ax.plot(data_exp_goodfit.loc[p:p,'D14C_BulkLayer'], 
+            data_exp_goodfit.loc[p:p,'Layer_depth_incre'])
+    plt.gca().invert_yaxis()
+    plt.draw()
+    #raw_input('press Enter to continue...') 
+    
 #%% plot climate region (whittakers)
 filename = 'Non_peat_data_synthesis.csv'
 data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
