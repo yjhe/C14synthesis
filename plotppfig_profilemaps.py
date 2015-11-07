@@ -26,7 +26,6 @@ if pltorisitesonly == 0: # including extra sites
     lons = np.r_[lons, data[:,0].astype(float)]
     lats = np.r_[lats, data[:,1].astype(float)]
     D14C = np.r_[D14C, data[:,5].astype(float)]
-    
 #%%
 fig = plt.figure(figsize=(8,5))
 ax = fig.add_axes([0.07,0.02,0.9,1])
