@@ -409,6 +409,8 @@ def d14C_pred(mdl, depth, Xextra, scaler=None):
     yhat = mdl.predict(X_scaled)
     return yhat
 
+def extrapolate_paintbynumber():
+    
 def construct_lonlat():
     latstep = 0.5; lonstep = 0.5;
     lonmax = 180.0 - lonstep/2.0;
