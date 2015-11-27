@@ -13,6 +13,7 @@ from mpl_toolkits.basemap import Basemap, cm
 import mynetCDF as mync
 from netCDF4 import Dataset
 import myplot as myplt
+import mystats as mysm
 
 #%% plot all profiles
 filename = 'Non_peat_data_synthesis.csv'
@@ -23,6 +24,7 @@ lats = prep.getvarxls(data,'Lat',profid,0)
 fig = plt.figure()
 ax = fig.add_axes([0.05,0.05,0.9,0.9])
 m = Basemap(llcrnrlon=-180,llcrnrlat=-60,urcrnrlon=180,urcrnrlat=80,projection='mill',lon_0=0,lat_0=0)
+lon, lat = np.meshgrid(lons, lats)
 x, y = m(lons,lats)
 m.drawcoastlines(linewidth=0.25)
 m.drawcountries(linewidth=0.25)
@@ -99,19 +101,20 @@ ax.set_title('Profile Sites')
 fig.savefig('./figures/Allprofiles.png')
 
 #%% plot HWSD data
-sclayfn = 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\S_CLAY.nc4'
-tclayfn = 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\T_CLAY.nc4'
-scecclayfn= 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\S_CEC_CLAY.nc4'
-tcecclayfn= 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\T_CEC_CLAY.nc4'
-tbulkdenfn= 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\T_BULK_DEN.nc4'
-sbulkdenfn= 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\S_BULK_DEN.nc4'
-sawtcfn = 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\AWT_S_SOC.nc4'
-tawtcfn = 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\AWT_T_SOC.nc4'
+sclayfn = '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\S_CLAY.nc4'
+tclayfn = '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\T_CLAY.nc4'
+scecclayfn= '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\S_CEC_CLAY.nc4'
+tcecclayfn= '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\T_CEC_CLAY.nc4'
+tbulkdenfn= '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\T_BULK_DEN.nc4'
+sbulkdenfn= '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\S_BULK_DEN.nc4'
+sawtcfn = '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\AWT_S_SOC.nc4'
+tawtcfn = '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\AWT_T_SOC.nc4'
+ref_depthfn = '..\\AncillaryData\\HWSD\\Regridded_ORNLDAAC\\REF_DEPTH.nc4'
 dictt = {'sclay':sclayfn,'tclay':tclayfn,'scecclay':scecclayfn, \
         'tcecclay': tcecclayfn, 'tbd':tbulkdenfn,'sbd':sbulkdenfn, \
-        'sawtc':sawtcfn, 'tawtc':tawtcfn}
-bd = 1  # if the calculation need bulk density
-ncfid = Dataset(dictt['sawtc'], 'r')
+        'sawtc':sawtcfn, 'tawtc':tawtcfn, 'ref_depth':ref_depthfn}
+bd = 0  # if the calculation need bulk density
+ncfid = Dataset(dictt['ref_depth'], 'r')
 nc_attrs, nc_dims, nc_vars = mync.ncdump(ncfid)
 lats = ncfid.variables['lat'][:]
 lons = ncfid.variables['lon'][:]
@@ -128,13 +131,36 @@ if bd == 1:
     tclay = ncfid.variables[nc_vars[2]][:]
     #var = var*sbd*1000*0.7 + tclay*tbd*1000*0.3
     var = tclay/(var + tclay)*100.
-#% plot
-cbtitle = "r'area weighted total soil C $(kgC/m^{2})$'"
-cbtitle = 'Proportion of topsoil C (%)'
-im = myplt.millshow(var,lons,lats,theTitle=None,cmap='GMT_haxby',latmin=-60,latmax=90,
-                    cbartitle=cbtitle,cbar='h')
-plt.savefig('./AncillaryData/HWSD/figure/'+'topawtc_ratio.png')                    
 
+var_rebin = mysm.rebin_mean(var, (360, 720))
+np.savetxt('soildepthHWSD0.5.txt',var_rebin)
+#% plot
+#cbtitle = "r'area weighted total soil C $(kgC/m^{2})$'"
+#cbtitle = 'Proportion of topsoil C (%)'
+cbtitle = "soil depth"
+im = myplt.millshow(var_rebin,np.arange(-180,180,0.5),np.arange(-90,90, 0.5),theTitle=None,cmap='GMT_haxby',latmin=-60,latmax=90,
+                    cbartitle=cbtitle,cbar='h',extend='neither')
+plt.savefig('./AncillaryData/HWSD/figure/'+'topawtc_ratio.png')    
+
+## create 3D soildepth binary array (1 when there is soil, 0 when there is not)       
+import numpy.ma as ma 
+soildepth = np.floor(var_rebin)
+plt.imshow(soildepth); plt.colorbar() # 90S-90N
+soildepth_3D = np.ones((100, 360, 720))
+valid = soildepth[~soildepth.mask]
+idx_valid = np.where(~soildepth.mask)
+n = 0
+for i,j in zip(idx_valid[0],idx_valid[1]):
+    #print i,j
+    #if soildepth[i,j] is not ma.masked:
+    d = soildepth[i,j]; d = int(d)
+    if d == 0:
+        soildepth_3D[:,i,j] = 0.
+    else:
+        soildepth_3D[d:,i,j] = 0.
+    n += 1
+    print 'n : ',n
+np.save('soildepth3D.npy',soildepth_3D)  
 #%% calculate HWSD global total csoil
 sawtcfn = 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\AWT_S_SOC.nc4'
 tawtcfn = 'AncillaryData\\HWSD\\Regridded_ORNLDAAC\\AWT_T_SOC.nc4'
@@ -193,19 +219,32 @@ im= myplt.geoshow(var,lons,lats,theTitle=None,cmap='GMT_haxby',\
 
 plt.savefig('./AncillaryData/NPP/npp.png')
 
-#%%
-m = Basemap(llcrnrlon=-180,llcrnrlat=-80,urcrnrlon=180,urcrnrlat=90,projection='mill',lon_0=0,lat_0=0)
-nx = len(lons); ny = len(lats)
-data = m.transform_scalar(var,lons,lats,nx,ny)
-im = m.imshow(data,cm.GMT_haxby)
-m.drawcoastlines(linewidth=0.25)
-m.drawmapboundary(fill_color='grey')
-parallels = np.arange(-90.,90.,30.)
-m.drawparallels(parallels,labels=[1,0,0,0],fontsize=10)
-meridians = np.arange(0.,360.,45.)
-m.drawmeridians(meridians,labels=[0,0,0,1],fontsize=10)
-cbar_ax = fig.add_axes([0.85, 0.09, 0.05, 0.7])
-cbar = fig.colorbar(im, cax=cbar_ax)
-#cbar.set_label('subsoil clay (% weight)')
-ax.set_title('subsoil clay (% weight)')
-fig.savefig('./AncillaryData/HWSD/figure/'+'sclay.png')
+#%% plot GSDESM soil depth
+ref_depthfn = 'C:\\download\\work\\!manuscripts\\dormancy_active\\dormancy_active\\' + \
+              'spatialRun\\CESMdataModelout\\GSDESMreadme\\REF_DEPTH1.nc'
+ncfid = Dataset(ref_depthfn, 'r')
+nc_attrs, nc_dims, nc_vars = mync.ncdump(ncfid)
+lats = ncfid.variables['lat'][:]
+lons = ncfid.variables['lon'][:]
+var = ncfid.variables['REF_DEPTH'][:]
+
+var_rebin = mysm.rebin_mean(var, (280, 720))
+# plot
+cbtitle = "soil depth (GSDESM)"
+im = myplt.millshow(np.flipud(var_rebin),np.arange(-180,180,0.5),np.arange(-56, 84, 0.5),
+                    theTitle=None,cmap='GMT_haxby',latmin=-60,latmax=90,
+                    cbartitle=cbtitle,cbar='h',extend='neither',clim=[0,100])
+plt.savefig('./AncillaryData/HWSD/figure/'+'topawtc_ratio.png')              
+#%% plot SoilGrids 50km soil C
+SG_fn = 'C:\\download\\work\\!manuscripts\\C14_synthesis\\AncillaryData\\SoilGrids\\SoilGrids50km.nc'
+ncfid = Dataset(SG_fn, 'r')
+nc_attrs, nc_dims, nc_vars = mync.ncdump(ncfid)
+lats = ncfid.variables['LATIXY'][:]
+lons = ncfid.variables['LONGXY'][:]
+var = ncfid.variables['OCSTHA_M'][:]
+scalar = 0.1
+im = myplt.millshow(scalar * np.sum(var[[0,1,2],:,:],axis=0),lons, lats,
+                    theTitle=None,cmap='GMT_haxby',latmin=-90,latmax=90,
+                    cbartitle='C stock (kg/m2)',cbar='h',extend='neither',clim=[0,100])
+                    
+                    

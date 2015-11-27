@@ -208,7 +208,8 @@ def get_Xscaled(X, Xextra=None):
         X_scaled = scaler.transform(X)
     else:
         scaler = sk.preprocessing.StandardScaler().fit(np.r_[X,Xextra])
-        print 'in get_Xscaled, Xextra is given, the constructed scaler.mean for whole dataset is ', scaler.mean_
+        print 'in get_Xscaled, Xextra is given, the constructed scaler.mean ' + \
+              'for whole dataset is ', scaler.mean_
         X_scaled = scaler.transform(X)
     return scaler, X_scaled
     
@@ -294,7 +295,7 @@ def changelccodeto14Csyn(lc):
     idx = np.zeros((17,lc.shape[0],lc.shape[1]))
     for i in range(17):
         idx[i,:,:] = lc==i
-    lonts, lats = construct_lonlat()
+    lons, lats = construct_lonlat()
     mapping = {1:[1,2,3,4,5,8],
                2:[1,2,3,4,5], 
                3:[1,2,3,4,5],
@@ -328,9 +329,17 @@ def changelccodeto14Csyn(lc):
     lc[(lc==4) & np.tile(lats>60,(720,1)).T] = 9
     # grassland from equiter to 20S set to savanna
     lc[(lc==4) & np.tile((lats>-23)&(lats<0),(720,1)).T] = 8
+    # temperate forest above 5 great lakes set to boreal
+    lc[(lc==2) & np.tile(lats>45,(720,1)).T \
+        & np.tile((lons>-100)&(lons<-60),(360,1))] = 1
+    # add tropical peatland
+    tropeat = np.loadtxt('C:\\download\\work\\!manuscripts\\C14_synthesis\\' + \
+                         'AncillaryData\\tropicalpeatland\\tropical_peatmap_0.5x0.5.txt',
+                         delimiter=',')
+    lc[tropeat==2] = 7
     return lc
 
-def prep_extra_data(plotorilc=0, plotnewlc=0, pred_veg=1, pred_soil=1):
+def prep_extra_data(plotorilc=0, plotnewlc=0, plotsoil=0, pred_veg=1, pred_soil=1):
     ''' 
     Prepare input data for extrapolation. Depth is exlcuded. 
     return:
@@ -352,8 +361,8 @@ def prep_extra_data(plotorilc=0, plotnewlc=0, pred_veg=1, pred_soil=1):
                    'Mixed forest','closed shrublands','Open shrublands','Woody savannas',
                    'savannas','grasslands','permanent wetlands','croplands',
                    'Cropland/natural veg mosaic']
-        myplt.geoshow(np.flipud(lc),lons,np.flipud(lats),cbar='h',ticks=range(16),cbarticklab=vegtype,
-                      rotation=45)
+        myplt.geoshow(np.flipud(lc),lons,np.flipud(lats),cbar='h',
+                      ticks=range(16),cbarticklab=vegtype,rotation=45)
     lc = changelccodeto14Csyn(lc)
 #    np.save('..\\AncillaryData\\landcoverdata\\14CsynthesisLC.npy',lc)  # top-down 90N-90S
     lc = np.flipud(lc) # top-down 90S-90N
@@ -365,9 +374,19 @@ def prep_extra_data(plotorilc=0, plotnewlc=0, pred_veg=1, pred_soil=1):
         lons,lats = construct_lonlat()
         vegtype = ['boreal forest','temperate forest','tropical forest','grassland',
                    'cropland','shrublands','peatland','savannas','tundra','desert']
-        myplt.geoshow(lc,lons,np.flipud(lats),cbar='h',ticks=np.arange(0,12,1),cbarticklab=vegtype,
+        myplt.geoshow(lc,lons,np.flipud(lats),cbar='h',ticks=np.arange(0,12,1),
+                      cbarticklab=vegtype,
                       rotation=45, levels=10, extend='neither')    
-
+    # plot soi order
+    if plotsoil == 1:
+        lons,lats = construct_lonlat()
+        order = ['Gel','His','Spo','And','Ox', 'Ert','Ard','Ult','Oll','Alf','Ept','Ent']
+#        {159:'Alf', 153:'And', 156:'Ard', 161:'Ent', 
+#         150:'Gel', 151:'His', 160:'Ept', 158:'Oll',
+#         154:'Ox', 152:'Spo', 157:'Ult', 155:'Ert'} 
+        myplt.geoshow(np.flipud(soilorder),lons,np.flipud(lats),cbar='h',ticks=np.arange(150,161+1,1),
+                      cbarticklab=order,rotation=45, levels=12, extend='neither')    
+        
     # ravel matrix to column vector. maxtrix is top-down 90S-90N
     mat_1d = np.ravel(mat)
     maprep_1d = np.ravel(maprep)
@@ -389,7 +408,7 @@ def prep_extra_data(plotorilc=0, plotnewlc=0, pred_veg=1, pred_soil=1):
     if pred_veg == 0 and pred_soil == 1:
         Xextra = np.c_[mat_1d, maprep_1d, dummy_sord[:,:]]    
     notNaNs = ~np.any(np.isnan(Xextra), 1)
-    return Xextra, notNaNs, lc_1d
+    return Xextra, notNaNs, lc_1d, sord_1d
 
 def d14C_pred(mdl, depth, Xextra, scaler=None):
     ''' use trained svr to predict d14C at a particular depth. no NANs are allowed.
@@ -409,8 +428,41 @@ def d14C_pred(mdl, depth, Xextra, scaler=None):
     yhat = mdl.predict(X_scaled)
     return yhat
 
-def extrapolate_paintbynumber():
-    
+def pred_paintbynumber(incre_data, depth, yvar='D14C_BulkLayer', group='veg'):
+    ''' predict global yvar using incre_data paint-by-number at a particular depth.
+    params:
+        incre_data  : {DataFrame} has column of yvar and biome/soil information
+        depth       : {float} depth you want to predict
+        group       : {str} paint by 'veg' or 'soil'
+    '''
+    vegtype = ['boreal forest','temperate forest','tropical forest','grassland',
+               'cropland','shrublands','peatland','savannas','tundra','desert']
+    order = {159:'Alf', 153:'And', 156:'Ard', 161:'Ent', 
+             150:'Gel', 151:'His', 160:'Ept', 158:'Oll',
+             154:'Ox', 152:'Spo', 157:'Ult', 155:'Ert'}   
+    _, _, lc_1d, sord_1d = prep_extra_data() # lc in 1-10, sord in 150-161
+    sord_1d = np.array(map(lambda x: order[x] if ~np.isnan(x) else x, sord_1d))
+    yhat = np.zeros(lc_1d.shape); yhat[:] = np.nan # note lc_1d is 90S-90N
+    if group == 'veg':    
+        for gr in filter(lambda x: ~np.isnan(x), 
+                         incre_data.VegTypeCode_Local.unique()):
+            if ~np.isnan(gr):            
+                idx = lc_1d == gr
+                dum =  prep.get_biome_ave(gr, incre_data, yvar)
+                x = dum['mean']; y = dum['Layer_depth_incre']; 
+                if x[y == depth].size != 0:
+                    yhat[idx] = x[y == depth]
+    elif group == 'soil':
+        for gr in filter(lambda x: not isinstance(x, float), 
+                         incre_data.SoilOrder_LEN_USDA.unique()):
+            if ~isinstance(gr, float):
+                idx = sord_1d == gr
+                dum =  prep.get_soilorder_ave(gr, incre_data, yvar)
+                x = dum['mean']; y = dum['Layer_depth_incre']; 
+                if x[y == depth].size != 0:
+                    yhat[idx] = x[y == depth]
+    return yhat
+                 
 def construct_lonlat():
     latstep = 0.5; lonstep = 0.5;
     lonmax = 180.0 - lonstep/2.0;
@@ -474,7 +526,8 @@ def getbiomed14Cprof(depth, mdl, scaler=None, siteinfo=None, **kwargs):
                         print 'sitelc is consistent with lc map...'
                     else:
                         print 'Not consistent lc ...'
-                        print '     site lon, lat is %.2f, %.2f, lc lon,lat is %.2f, %.2f'%(lon, lat, lons[jj], lats[ii])
+                        print '     site lon, lat is %.2f, %.2f, ' + \
+                              'lc lon,lat is %.2f, %.2f'%(lon, lat, lons[jj], lats[ii])
                         print '     sitelc is %.1f, lc is %.1f, ...'%(sitelc, lc[ii,jj])
                     mask[nb,ii,jj] = 1    
     for nd, d in enumerate(depth):
@@ -527,28 +580,22 @@ def getbiomed14Cprof_trained(depth, mdl, scaler, **kwargs):
             biome_14C_mean[nd, nb] = np.nanmean(tmp)
             biome_14C_std[nd, nb]  = np.nanstd(tmp)
     return biome_14C_mean, biome_14C_std
-    
-def plot_obs_pf(group='veg', axes=None, yvar='D14C_BulkLayer', 
-                xlim=[-1000, 500], ylim=[-50, 800]):
+
+def plot_obs_pf(incre_data, group='veg', axes=None, yvar='D14C_BulkLayer', 
+                xlim=[-1000, 500], ylim=[-50, 800], threshold=None):
     '''
     plot observed biome/soil order profile with shaded area. use incremented data
     params:
+        incre_data: {DataFrame} incremented data at 1cm interval
         group: {'veg'|'soil'} indicate plot by vegetation or by soil order
+        interp: {str} interpolation approach (incre, exp, poly). poly is 2d.
         yvar : {Str} y-variable, 'D14C_BulkLayer','pct_C', or 'BulkDensity'
         xlim : {list} plotting range of the yvar
         ylim : {list} depth range 
-    '''
-    filename = 'Non_peat_data_synthesis.csv'
-    data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
-    pid = data.index.unique() # index of profile start
-    if group == 'veg':
-        colname = ['Layer_top_norm','Layer_bottom_norm',yvar,'VegTypeCode_Local']
-    elif group == 'soil':
-        colname = ['Layer_top_norm','Layer_bottom_norm',yvar,'SoilOrder_LEN_USDA']
-    newdf = data[colname]
-    incre_data = prep.prep_increment(newdf, colname)
-    
+        threshold : cutoff for organic horizon
+    '''    
     # plot observed biome/soir order -averaged profile. shaded errorbar
+    units = {'D14C_BulkLayer':'('+u"\u2030)",'pct_C':'(%)','BulkDensity':'($gC\ cm^{-3}$)'}
     if group == 'veg':
         vegtype = ['boreal forest','temperate forest','tropical forest','grassland',
                    'cropland','shrublands','peatland','savannas','tundra','desert']
@@ -567,18 +614,30 @@ def plot_obs_pf(group='veg', axes=None, yvar='D14C_BulkLayer',
     for n,row in enumerate(axes):
         for m,ax in enumerate(row):
             idx = ncols*n+m
-            if group == 'veg':
-                dum = prep.get_biome_ave(idx+1, incre_data, yvar) # biome index (1-10)
-            elif group == 'soil':
-                dum = prep.get_soilorder_ave(order[idx], incre_data, yvar) # soil (0-11)
-            x = dum['mean']; y = dum['Layer_depth_incre']; err = dum['std']
+            try:
+                if group == 'veg':
+                    dum = prep.get_biome_ave(idx+1, incre_data, yvar) # biome index (1-10)
+                    N = incre_data[(incre_data.VegTypeCode_Local==idx+1) & \
+                                   (~incre_data[yvar].isnull())].index.unique().shape[0]
+                    x = dum['mean']; y = dum['Layer_depth_incre']; err = dum['std']
+                    if threshold is not None:   
+                        x[y<threshold[idx+1]] = np.nan 
+                        err[y<threshold[idx+1]] = np.nan 
+                elif group == 'soil':
+                    dum = prep.get_soilorder_ave(order[idx], incre_data, yvar) # soil (0-11)
+                    N = incre_data[(incre_data.SoilOrder_LEN_USDA==order[idx]) & \
+                                   (~incre_data[yvar].isnull())].index.unique().shape[0]
+                    x = dum['mean']; y = dum['Layer_depth_incre']; err = dum['std']
+            except KeyError:
+                continue                
+            
             ax.plot(x, y, 'k-')    
             ax.locator_params(axis='y',tight=True,nbins=8)
             ax.locator_params(axis='x',tight=True,nbins=6)
             ax.fill_betweenx(y, x-err, x+err, alpha=0.5, edgecolor='#CC4F1B', facecolor='#FF9848',
                             linewidth=0, linestyle='-')
             ax.set_ylabel('depth(cm)')
-            ax.set_xlabel(yvar)
+            ax.set_xlabel(r''+yvar+' '+units[yvar])
             if group == 'veg':
                 ax.set_title(vegtype[idx])
             elif group == 'soil':
@@ -586,6 +645,7 @@ def plot_obs_pf(group='veg', axes=None, yvar='D14C_BulkLayer',
             ax.set_xlim(xlim)
             ax.set_ylim(ylim)
             ax.grid(True)
+            plt.text(0.7, 0.1, 'N = '+str(N),transform=ax.transAxes, fontsize=10)
     ax.invert_yaxis()
     plt.tight_layout()  
             
@@ -743,7 +803,7 @@ def verify_site_lc(siteinfo):
     Extract MODIS land cover at profile sites, add this info to siteinfo file which has 
     lon, lat, site land cover. 
     '''
-    Xextra, notNaNs, lc_1d = prep_extra_data()
+    Xextra, notNaNs, lc_1d, sord_1d = prep_extra_data()
     lc = np.reshape(lc_1d,(360,720)); lc = np.flipud(lc) # 90N - 90S
     lons, lats = construct_lonlat() # lon/lat for lc
     lcatsite = np.zeros([len(siteinfo),2]) # 1st col is MODISlc, 2nd col is WHETHER consistent
@@ -772,7 +832,7 @@ def plot_lc_and_sitelc(mapp='veg', plt_veg=None):
         mapp   : {str} plot mat/maprep/veg for the underlying map
         plt_veg: {int} if want to plot a specific vegtype, 1-10
     '''
-    Xextra, notNaNs, lc_1d = prep_extra_data()
+    Xextra, notNaNs, lc_1d, sord_1d = prep_extra_data()
     lc = np.reshape(lc_1d,(360,720)); # 90S-90N
     mat = np.reshape(Xextra[:,0],(360,720))
     maprep = np.reshape(Xextra[:,1],(360,720))
@@ -994,7 +1054,152 @@ ax.bar(bin_eg[1:], y/1e15, width=np.diff(bin_eg)[0])
 #ax.set_yscale('log')
 ax.set_ylabel('SOC in 0-30cm (PgC)')
 ax.set_xlabel('tau (yr)')
-#%% get biome mean profile from global extrapolation
+#%% plot observed biome/soil grouped mean profile with shaded area
+interp = 'linear'
+filename = 'Non_peat_data_synthesis.csv'
+data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
+if interp == 'repeat':
+    colname = ['Layer_top_norm','Layer_bottom_norm',
+               'BulkDensity','pct_C','D14C_BulkLayer','Cmass',
+               'VegTypeCode_Local','SoilOrder_LEN_USDA']
+    newdf = data[colname]
+    incre_data = prep.prep_increment(newdf, colname)
+elif interp == 'exp':
+    incre_data = prep.prep_expinterp(data)
+elif interp == 'poly':
+    incre_data, statprop = prep.prep_polyinterp(data, 2, min_layer=4)
+elif interp == 'linear':
+    incre_data, statprop = prep.prep_lnrinterp(data, min_layer=4)
+
+group = 'veg'; yvar='pct_C'; xlim = [0, 70]
+threshold = {1:-11, 2:-2, 3:-2, 4:-2, 5:-1, 6:-1, 7:-310, 8:0, 9:-1, 10:0} # veg 1-10
+plot_obs_pf(incre_data,group=group, yvar=yvar, ylim=[-50, 150], xlim=xlim,
+            threshold=threshold)
+
+# plot BD*pct_C, gC/cm3 
+new_incre_data = incre_data.copy()
+new_incre_data['gC_per_cm3'] = new_incre_data.BulkDensity * new_incre_data.pct_C / 100.
+group = 'veg'; yvar='gC_per_cm3'; xlim = [0, 0.2]
+plot_obs_pf(new_incre_data,group=group, yvar=yvar, ylim=[-450, 150], xlim=xlim)
+
+#%% do paint-by-number prediction using observed biome/soil grouped mean profile with shaded area
+interp = 'repeat'
+filename = 'Non_peat_data_synthesis.csv'
+data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
+if interp == 'repeat':  # reapeat
+    colname = ['Layer_top_norm','Layer_bottom_norm',yvar,'VegTypeCode_Local','SoilOrder_LEN_USDA']
+    newdf = data[colname]
+    incre_data = prep.prep_increment(newdf, colname)
+elif interp == 'exp':
+    incre_data = prep.prep_expinterp(data)
+elif interp == 'poly':
+    incre_data, statprop = prep.prep_polyinterp(data, 3, min_layer=4)
+elif interp == 'linear':
+    incre_data, statprop = prep.prep_lnrinterp(data, min_layer=4)
+
+depth = -10.; group = 'soil'
+yhat = pred_paintbynumber(incre_data, depth, yvar='D14C_BulkLayer', group=group)
+yhat = np.reshape(yhat,(360,720))
+# plot map
+plt.figure()
+lons,lats = construct_lonlat()
+im = myplt.geoshow(yhat,lons,np.flipud(lats),extend='neither')
+# clim=[0 100]
+plt.title('depth '+str(depth)+' (cm)')
+
+#%% paint-by-number based global C stock calculation. need to run the 2nd above cell to get 
+# new_incre_data DF.
+
+def pbn_glb(depth, group):
+    ''' generate 3D (depth * 360 * 720) global paint-by-number 
+    params:
+    return:
+        glbC_3D : 3D global C stock at 1cm3 increment
+        glbC    : 90N-90S
+    '''
+    glbyhat = np.zeros((len(depth),360,720)); glbyhat[:] = np.nan
+    for n,d in enumerate(depth):
+        print 'depth is ', d
+        yhat = pred_paintbynumber(new_incre_data, d, yvar='gC_per_cm3', group=group)
+        yhat[yhat==0] = np.nan
+        glbyhat[n,:,:] = np.reshape(yhat,(360,720)) # 90S-90N
+    return glbyhat
+# mineral
+depth = range(1,100+1,1); 
+glbC_veg_3D = pbn_glb(depth, 'veg')
+soildepth_3D = np.load('soildepth3D.npy')
+glbC_veg = np.nansum(glbC_veg_3D*soildepth_3D,axis=0) # gC/cm2 for the top 1m
+plt.imshow(glbC_veg); plt.colorbar()
+glbC_veg = glbC_veg * 1.0e4 / 1.0e3 # kgC/m2 for the top 1m 
+
+# organic
+depth = range(-100,0+1,1); 
+glbC_veg = np.nansum(glbC_veg_3D,axis=0) # gC/cm2 for the top 1m
+glbC_veg = glbC_veg * 1.0e4 / 1.0e3 # kgC/m2 for the top 1m 
+
+glbC_soil_3D = pbn_glb(depth, 'soil')
+glbC_soil = np.nansum(glbC_soil_3D,axis=0) # gC/cm2 for the top 1m
+glbC_soil = glbC_soil * 1.0e4 / 1.0e3 # kgC/m2 for the top 1m 
+
+# cut for mean Organic layer thickness
+def cut_O_thres(threshold, glbCdata, top):
+    '''cut O horizon thickness by the biome-specific threshold
+    i.e., using mean O_thickness instead of maximum
+    params:
+        top : {int} top thickness of glbCdata (e.g., 100, if depth = -100:0)
+    '''
+    glbCdata_meanO = glbCdata.copy()
+    _, _, lc_1d, sord_1d = prep_extra_data() # lc in 1-10, sord in 150-161    
+    for l in threshold.keys(): # loop over all biomes
+        print 'biome is ', l
+        lc = lc_1d.reshape((360, 720))
+        idx = lc == l
+        glbCdata_meanO[:top-threshold[l]:,:,:][:,idx] = np.nan
+    return glbCdata_meanO
+threshold = {1:11, 2:2, 3:2, 4:2, 5:1, 6:1, 7:310, 8: 0, 9:1, 10:0} # veg 1-10
+glbC_veg_3D_meanO = cut_O_thres(threshold, glbC_veg_3D, 100)
+glbC_veg_meanO = np.nansum(glbC_veg_3D_meanO,axis=0) # gC/cm2 for the top 1m
+glbC_veg_meanO = glbC_veg_meanO * 1.0e4 / 1.0e3 # kgC/m2 for the top 1m 
+
+glbC_soil_3D_meanO = cut_O_thres(threshold, glbC_soil_3D, 100)
+glbC_soil_meanO = np.nansum(glbC_soil_3D_meanO,axis=0) # gC/cm2 for the top 1m
+glbC_soil_meanO = glbC_soil_meanO * 1.0e4 / 1.0e3 # kgC/m2 for the top 1m 
+
+
+# plot map
+def plot_glbC(glbC,group,clim=[0,28]):
+    plt.figure()
+    lons,lats = construct_lonlat()
+    glbC[glbC==0] = np.nan
+    im = myplt.geoshow(glbC,lons,np.flipud(lats),extend='neither', clim=clim)
+    # glbC is S-N
+    plt.title('kgC/m2, paint by '+group)
+plot_glbC(glbC_veg, 'veg', clim=[0,28]) 
+plot_glbC(glbC_soil, 'soil', clim=[0,28])
+plot_glbC(glbC_veg_meanO, 'veg', clim=[0,10])
+plot_glbC(glbC_soil_meanO, 'soil', clim=[0,10])
+
+# calculate global total
+def cal_glbtotC(glbC):
+    areaa = mysm.cal_earthgridarea(0.5)
+    landfrac = np.loadtxt('landfrac_0.5.txt',delimiter=',')  # 90N-90S
+    landfrac[landfrac<0] = 0. 
+    #plt.matshow(landfrac); plt.colorbar()
+    plt.matshow(np.flipud(glbC)); plt.colorbar()
+    #plt.hist(landfrac[~np.isnan(landfrac)],bins=10,cumulative=True,normed=True)
+    areaweighted = np.flipud(glbC) * areaa * landfrac 
+    print 'glb tot C is ',np.nansum(areaweighted) * 1e3 / 1.0e15 # PgC   
+cal_glbtotC(glbC_veg)
+cal_glbtotC(glbC_soil)
+cal_glbtotC(glbC_veg_meanO)
+cal_glbtotC(glbC_soil_meanO)
+## linear interpolate
+# mineral 1-100cm: 2215 group by veg; 2238 group by soil
+# org -100-0cm: 219 group by veg, using mean O_layer thickness
+## repeat interpolation
+# minearl 1-100cm: 2128 group by veg;
+# org -100-0cm: 192 group by veg
+#%% get biome mean profile from global extrapolation using ML
 yvar = 'BulkDensity'
 kwargs = {'pred_veg': 1, 'pred_soil': 1}
 getglbextra_atsites = 0
@@ -1051,7 +1256,7 @@ for n,row in enumerate(axes):
 col.invert_yaxis()
 plt.tight_layout()
 
-#%% get biome mean profile from trainning process
+#%% get biome mean profile from trainning process using ML
 # get biome from training
 yvar = 'BulkDensity'
 kwargs = {'pred_veg': 1, 'pred_soil': 1, 'useorilyr':1}
@@ -1128,13 +1333,13 @@ verify_lc_df['clim_code_whittaker'] = map(lambda x: whittaker_map[x],
 verify_lc_df['clim_code'] = map(lambda x: clim_code_map[x], 
                                 prep.getvarxls(data, 'clim_code', pid, 0))
 
-verify_lc_df.to_csv('verify_site_modisls2.csv', encoding='iso-8859-1')     
+verify_lc_df.to_csv('verify_site_modisls.csv', encoding='iso-8859-1')     
 plot_lc_and_sitelc()
 #%% plot individual biome site lc vs. MODIS lc. profile map
 vegtype = ['boreal forest','temperate forest','tropical forest','grassland',
            'cropland','shrublands','peatland','savannas','tundra','desert']
-mapp = 'veg'
-for i in range(1,len(vegtype)+1):
+mapp = 'maprep'
+for i in [3]:  # range(1,len(vegtype)+1)
     plot_lc_and_sitelc(mapp=mapp, plt_veg=i)
     plt.savefig('..\\figures\\global_extrapolation\\withGCBdata\\site_locations\\'+ \
                 mapp+'_'+vegtype[i-1]+'.png')

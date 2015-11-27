@@ -44,6 +44,25 @@ def extrap1d(interpolator):
         return array(map(pointwise, array(xs)))
 
     return ufunclike
+
+def extrap1d_constby(interpolator):
+    ''' extrapolation same as 'extrap1d' but use constant beyond x[0] and x[-1]
+    '''
+    xs = interpolator.x
+    ys = interpolator.y
+
+    def pointwise(x):
+        if x < xs[0]:
+            return ys[0]
+        elif x > xs[-1]:
+            return ys[-1]
+        else:
+            return interpolator(x)
+
+    def ufunclike(xs):
+        return array(map(pointwise, array(xs)))
+
+    return ufunclike
     
 def getCweightedD14C(filename,cutdep=None):
     """ Get SOC averaged D14C for each profile. 
@@ -895,40 +914,6 @@ def getDDelta14C(sampleyr, d14C):
         else:
             dd14C[i] = np.nan
     return dd14C
-    
-def prep_increment(newdf, colname, inc=1):
-    '''
-        pass in csv data, interpolate to increment (inc=1cm) by assigning all 
-        increments within a layer the same values from that layer. 
-    param: 
-        newdf   : {dataframe}, cols from csv, makes sure you pass in depth 
-                  (normalized depth, top, bot)
-        colname : {list}, col names of the newdf passed in
-        inc     : self-defined increment to interpolate to
-    return:
-        outdf   : {dataframe} interpolated newdf, with the continuous depth appended
-                     col 0  : continuous depth, 'Layer_depth_incre'
-                     col 1  : profid
-                     col 2-3: depth
-                     col 4+ : data
-    '''
-    uniqprofid = newdf.index.unique()
-    out = []
-    idx = []
-    for idd in uniqprofid:
-        lay_bot = np.r_[np.ceil(newdf.loc[idd:idd,'Layer_top_norm'].values[0]), 
-                        np.ceil(newdf.loc[idd:idd,'Layer_bottom_norm'].values)]
-        cont_lay_bot = np.arange(lay_bot[0], lay_bot[-1]+1)        
-        tmpdata = newdf.loc[idd:idd, colname].values
-        diff = np.diff(lay_bot)
-        repn = diff/inc; repn = repn.astype(int)
-        newdat = np.repeat(tmpdata, repn, axis=0)
-        out += list(np.c_[cont_lay_bot,np.vstack((newdat,newdat[-1]))])
-        idx += list(np.repeat(idd, len(cont_lay_bot))) # profid
-    out = np.asarray(out)
-    outdf = pd.DataFrame(data=out, index=idx, columns=['Layer_depth_incre']+colname) 
-    converted = outdf.apply(lambda col : to_number(col) , axis = 1)  
-    return converted
 
 def to_number(s):
     '''
@@ -985,7 +970,7 @@ def get_soilorder_ave(soilorder, interpdf, cols):
     '''
     Get soil order averaged value using data matrix that is interpolated to fixed increments
     parameters:
-        biome    : {int} soil order index (1-12)
+        soilorder: {int|str} soil order index (1-12 or the string)
         interpdf : {dataframe} df that is interperlated to fixed increments
         cols     : {str | list of str} cols names that you want to average on. 
                    col should be numerical variable
@@ -1023,7 +1008,41 @@ def getD14C_cumC(filename):
         data.loc[i:i, 'cumC'] = cumC
     return data
         
-def prep_lnrinterp(data):
+def prep_increment(newdf, colname, inc=1):
+    '''
+        pass in csv data, interpolate to increment (inc=1cm) by assigning all 
+        increments within a layer the same values from that layer. 
+    param: 
+        newdf   : {dataframe}, cols from csv, makes sure you pass in depth 
+                  (normalized depth, top, bot)
+        colname : {list}, col names of the newdf passed in
+        inc     : self-defined increment to interpolate to
+    return:
+        outdf   : {dataframe} interpolated newdf, with the continuous depth appended
+                     col 0  : continuous depth, 'Layer_depth_incre'
+                     col 1  : profid
+                     col 2-3: depth
+                     col 4+ : data
+    '''
+    uniqprofid = newdf.index.unique()
+    out = []
+    idx = []
+    for idd in uniqprofid:
+        lay_bot = np.r_[np.ceil(newdf.loc[idd:idd,'Layer_top_norm'].values[0]), 
+                        np.ceil(newdf.loc[idd:idd,'Layer_bottom_norm'].values)]
+        cont_lay_bot = np.arange(lay_bot[0], lay_bot[-1]+1)        
+        tmpdata = newdf.loc[idd:idd, colname].values
+        diff = np.diff(lay_bot)
+        repn = diff/inc; repn = repn.astype(int)
+        newdat = np.repeat(tmpdata, repn, axis=0)
+        out += list(np.c_[cont_lay_bot,np.vstack((newdat,newdat[-1]))])
+        idx += list(np.repeat(idd, len(cont_lay_bot))) # profid
+    out = np.asarray(out)
+    outdf = pd.DataFrame(data=out, index=idx, columns=['Layer_depth_incre']+colname) 
+    converted = outdf.apply(lambda col : to_number(col) , axis = 1)  
+    return converted
+
+def prep_lnrinterp(data, min_layer=3):
     '''
     Given a profie id, if BD and pctC data are more than 3 for each, linear interp at 1cm
     interval of whole profile. return new dataframe.
@@ -1035,36 +1054,38 @@ def prep_lnrinterp(data):
     '''   
     pid = data.index.unique()   # index of profile start
     out = pd.DataFrame(columns=['Layer_depth_incre','D14C_BulkLayer','BulkDensity',
-                                'pct_C','Lon','Lat','MAT','MAP','VegTypeCode_Local',
+                                'pct_C','Cmass','Lon','Lat','MAT','MAP','VegTypeCode_Local',
                                 'SoilOrder_LEN_USDA'])
     statprop = pd.DataFrame(columns=['D14C_R2','D14C_RMSE','D14C_pctERR',
                                      'BD_R2','BD_RMSE','BD_pctERR',
-                                     'pctC_R2','pctC_RMSE','pctC_pctERR'],index=pid)
+                                     'pctC_R2','pctC_RMSE','pctC_pctERR',
+                                     'Cmass_R2','Cmass_RMSE','Cmass_pctERR'],index=pid)
 
     marker = myplt._markeriter
     for n,i in enumerate(pid):
         print 'profile is :',i
-        if data.loc[i:i,'Layer_top'].shape[0] < 3: # number of layer < 3, skip
-            print 'valid layer number less than 3, skip profile...'
+        if data.loc[i:i,'Layer_top'].shape[0] < min_layer: # number of layer < 3, skip
+            print 'valid layer number less than %d, skip profile...'%min_layer
             continue            
         else: # multiple layers
             print 'interpolate ...'
-            incre = np.arange(data.loc[i:i,'Layer_top'].values[0],
-                              data.loc[i:i,'Layer_bottom'].values[-1]+1, 1)
+            incre = np.arange(np.round(data.loc[i:i,'Layer_top_norm'].values[0]),
+                              np.round(data.loc[i:i,'Layer_bottom_norm'].values[-1])+1, 1)
             tmpdf = pd.DataFrame(columns=['Layer_depth_incre','D14C_BulkLayer','BulkDensity',
                                 'pct_C','Lon','Lat','MAT','MAP','VegTypeCode_Local',
                                 'SoilOrder_LEN_USDA'],index=np.repeat(i,incre.shape[0]))   
             tmpdf.loc[i:i,'Layer_depth_incre'] = incre
-            layerbotori = np.array(data.loc[i:i,'Layer_bottom']).astype(float)
-            layertop = np.array(data.loc[i:i,'Layer_top']).astype(float)
+            layerbotori = np.array(data.loc[i:i,'Layer_bottom_norm']).astype(float)
+            layertop = np.array(data.loc[i:i,'Layer_top_norm']).astype(float)
             layerbot = np.mean(np.c_[layertop, layerbotori], axis=1)
             bd = np.array(data.loc[i:i,'BulkDensity']).astype(float)
             d14C = np.array(data.loc[i:i,'D14C_BulkLayer']).astype(float)
             pctC = np.array(data.loc[i:i,'pct_C']).astype(float)
+            Cmass = np.array(data.loc[i:i,'Cmass']).astype(float)
             
             notNANs = ~np.isnan(d14C)
             if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
-                f_i = interp1d(layerbot[notNANs], d14C[notNANs]); f_x = extrap1d(f_i); 
+                f_i = interp1d(layerbot[notNANs], d14C[notNANs]); f_x = extrap1d_constby(f_i); 
                 tmpdf.loc[i:i,'D14C_BulkLayer'] = f_x(incre)
                 yhat = f_x(layerbot)
                 statprop.loc[i:i,'D14C_R2'] = mysm.cal_R2(d14C[notNANs], yhat[notNANs])
@@ -1073,7 +1094,7 @@ def prep_lnrinterp(data):
                 
             notNANs = ~np.isnan(bd)
             if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
-                f_i = interp1d(layerbot[notNANs], bd[notNANs]); f_x = extrap1d(f_i); 
+                f_i = interp1d(layerbot[notNANs], bd[notNANs]); f_x = extrap1d_constby(f_i); 
                 tmpdf.loc[i:i,'BulkDensity'] = f_x(incre)
                 yhat = f_x(layerbot)
                 statprop.loc[i:i,'BD_R2'] = mysm.cal_R2(bd[notNANs], yhat[notNANs])
@@ -1082,13 +1103,22 @@ def prep_lnrinterp(data):
             
             notNANs = ~np.isnan(pctC)
             if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
-                f_i = interp1d(layerbot[notNANs], pctC[notNANs]); f_x = extrap1d(f_i); 
+                f_i = interp1d(layerbot[notNANs], pctC[notNANs]); f_x = extrap1d_constby(f_i); 
                 tmpdf.loc[i:i,'pct_C'] = f_x(incre)
                 yhat = f_x(layerbot)
                 statprop.loc[i:i,'pctC_R2'] = mysm.cal_R2(pctC[notNANs], yhat[notNANs])
                 statprop.loc[i:i,'pctC_RMSE'] = mysm.cal_RMSE(pctC[notNANs], yhat[notNANs])
                 statprop.loc[i:i,'pctC_pctERR'] = mysm.cal_pctERR(pctC[notNANs], yhat[notNANs])
 
+            notNANs = ~np.isnan(Cmass)
+            if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
+                f_i = interp1d(layerbot[notNANs], Cmass[notNANs]); f_x = extrap1d_constby(f_i); 
+                tmpdf.loc[i:i,'Cmass'] = f_x(incre)
+                yhat = f_x(layerbot)
+                statprop.loc[i:i,'Cmass_R2'] = mysm.cal_R2(Cmass[notNANs], yhat[notNANs])
+                statprop.loc[i:i,'Cmass_RMSE'] = mysm.cal_RMSE(Cmass[notNANs], yhat[notNANs])
+                statprop.loc[i:i,'Cmass_pctERR'] = mysm.cal_pctERR(Cmass[notNANs], yhat[notNANs])
+                
             rep = incre.shape[0]
             for name in ['Lon','Lat','MAT','MAP','VegTypeCode_Local','SoilOrder_LEN_USDA']:
                 tmpdf.loc[i:i, name] =  np.repeat(data.loc[i:i, name].iloc[0], rep)
@@ -1100,9 +1130,10 @@ def prep_lnrinterp(data):
 #            plt.gca().invert_yaxis()
 #            raw_input('press Enter to continue...') 
             plt.close()
+    out = out.apply(lambda col : to_number(col) , axis = 1)  
     return out, statprop
 
-def prep_expinterp(data):
+def prep_expinterp(data, min_layer=3):
     '''
     Given a profie id, if BD and pctC data are more than 3 for each, exp interp at 1cm
     interval of whole profile. return new dataframe.
@@ -1127,23 +1158,24 @@ def prep_expinterp(data):
                                 'SoilOrder_LEN_USDA'])
     statprop = pd.DataFrame(columns=['D14C_R2','D14C_RMSE','D14C_pctERR','D14C_zstar','D14C_surf',
                                      'BD_R2','BD_RMSE','BD_pctERR','BD_zstar','BD_surf',
-                                     'pctC_R2','pctC_RMSE','pctC_pctERR','pctC_zstar','pctC_surf'],index=pid)
+                                     'pctC_R2','pctC_RMSE','pctC_pctERR','pctC_zstar','pctC_surf',
+                                     ''],index=pid)
     marker = myplt._markeriter
     for n,i in enumerate(pid):
         print 'profile is :',i
-        if data.loc[i:i,'Layer_top'].shape[0] < 3: # number of layer < 3, skip
+        if data.loc[i:i,'Layer_top'].shape[0] < min_layer: # number of layer < 3, skip
             print 'valid layer number less than 3, skip profile...'
             continue            
         else: # multiple layers
             print 'interpolate ...'
-            incre = np.arange(data.loc[i:i,'Layer_top'].values[0],
-                              data.loc[i:i,'Layer_bottom'].values[-1]+1, 1)
+            incre = np.arange(data.loc[i:i,'Layer_top_norm'].values[0],
+                              data.loc[i:i,'Layer_bottom_norm'].values[-1]+1, 1)
             tmpdf = pd.DataFrame(columns=['Layer_depth_incre','D14C_BulkLayer','BulkDensity',
                                 'pct_C','Lon','Lat','MAT','MAP','VegTypeCode_Local',
                                 'SoilOrder_LEN_USDA'],index=np.repeat(i,incre.shape[0])) 
             tmpdf.loc[i:i,'Layer_depth_incre'] = incre
-            layerbotori = np.array(data.loc[i:i,'Layer_bottom']).astype(float)
-            layertop = np.array(data.loc[i:i,'Layer_top']).astype(float)
+            layerbotori = np.array(data.loc[i:i,'Layer_bottom_norm']).astype(float)
+            layertop = np.array(data.loc[i:i,'Layer_top_norm']).astype(float)
             layerbot = np.mean(np.c_[layertop, layerbotori], axis=1) # use mid-point depth
             bd = np.array(data.loc[i:i,'BulkDensity']).astype(float)
             d14C = np.array(data.loc[i:i,'D14C_BulkLayer']).astype(float)
@@ -1196,9 +1228,125 @@ def prep_expinterp(data):
 #            plt.gca().invert_yaxis()
 #            raw_input('press Enter to continue...') 
             plt.close()
+    out = out.apply(lambda col : to_number(col) , axis = 1)  
+    return out, statprop 
+
+def prep_polyinterp(data, deg, min_layer=3):
+    '''
+    Given a profie id, if BD and pctC data are more than 3 for each, do 2nd order polynomial
+    interp at 1cm interval of whole profile. return new dataframe.
+    In contrast to 'prep_increment' which assumes homogeneous for each layer.
+    params: 
+        data        : {dataf frame}
+        deg         : {int} degree, 2 or 3
+        min_layer   : {int} minimum number of layers required. > min_layer
+    return:
+        out         : {dataframe} new df with BD, pctC, D14C and depth exp 
+                      interpolated at 1cm increment
+        statprop    : {dataframe} fitting properties/statistics
+    '''   
+    def polyfunc(x, p, deg):
+        '''
+        @params: p, p(x) = p[0] * x**deg + ... + p[deg]; deg = 2 or 3
+        '''    
+        n = x.shape[0]
+        if deg == 2:
+            return np.sum(np.c_[x**2, x, np.tile(1.,(n,))]*p,axis=1)
+        elif deg == 3:
+            return np.sum(np.c_[x**3, x**2, x, np.tile(1.,(n,))]*p,axis=1)
+        
+    pid = data.index.unique()   # index of profile start
+    out = pd.DataFrame(columns=['Layer_depth_incre','D14C_BulkLayer','BulkDensity',
+                                'pct_C','Lon','Lat','MAT','MAP','VegTypeCode_Local',
+                                'SoilOrder_LEN_USDA'])
+    if deg == 2:
+        statprop = pd.DataFrame(columns=['D14C_R2','D14C_RMSE','D14C_pctERR','D14C_p0','D14C_p1','D14C_p2',
+                                         'BD_R2','BD_RMSE','BD_pctERR','BD_p0','BD_p1','BD_p2',
+                                         'pctC_R2','pctC_RMSE','pctC_pctERR','pctC_p0','pctC_p1','pctC_p2'],
+                                         index=pid)
+    elif deg == 3:
+        statprop = pd.DataFrame(columns=['D14C_R2','D14C_RMSE','D14C_pctERR','D14C_p0','D14C_p1','D14C_p2','D14C_p3',
+                                         'BD_R2','BD_RMSE','BD_pctERR','BD_p0','BD_p1','BD_p2','BD_p3',
+                                         'pctC_R2','pctC_RMSE','pctC_pctERR','pctC_p0','pctC_p1','pctC_p2','pctC_p3'],
+                                         index=pid)
+        
+    marker = myplt._markeriter
+    for n,i in enumerate(pid):
+        print 'profile is :',i
+        if data.loc[i:i,'Layer_top'].shape[0] < min_layer: # number of layer < 3, skip
+            print 'valid layer number less than %d, skip profile...'%min_layer
+            continue
+        else: # multiple layers
+            print 'interpolate ...'
+            incre = np.arange(np.round(data.loc[i:i,'Layer_top_norm'].values[0]),
+                              np.round(data.loc[i:i,'Layer_bottom_norm'].values[-1]+1), 1)
+            tmpdf = pd.DataFrame(columns=['Layer_depth_incre','D14C_BulkLayer','BulkDensity',
+                                'pct_C','Lon','Lat','MAT','MAP','VegTypeCode_Local',
+                                'SoilOrder_LEN_USDA'],index=np.repeat(i,incre.shape[0])) 
+            tmpdf.loc[i:i,'Layer_depth_incre'] = incre
+            layerbotori = np.array(data.loc[i:i,'Layer_bottom_norm']).astype(float)
+            layertop = np.array(data.loc[i:i,'Layer_top_norm']).astype(float)
+            layerbot = np.mean(np.c_[layertop, layerbotori], axis=1) # use mid-point depth
+            bd = np.array(data.loc[i:i,'BulkDensity']).astype(float)
+            d14C = np.array(data.loc[i:i,'D14C_BulkLayer']).astype(float)
+            pctC = np.array(data.loc[i:i,'pct_C']).astype(float)
+            
+            notNANs = ~np.isnan(d14C)
+            if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
+                p = np.polyfit(layerbot[notNANs], d14C[notNANs], deg) 
+                tmpdf.loc[i:i,'D14C_BulkLayer'] = polyfunc(incre, p, deg)
+                yhat = polyfunc(layerbot[notNANs], p, deg)
+                statprop.loc[i:i,'D14C_R2'] = mysm.cal_R2(d14C[notNANs], yhat)
+                statprop.loc[i:i,'D14C_RMSE'] = mysm.cal_RMSE(d14C[notNANs], yhat)
+                statprop.loc[i:i,'D14C_pctERR'] = mysm.cal_pctERR(d14C[notNANs], yhat)
+                if deg == 2:
+                    statprop.loc[i:i,['D14C_p0','D14C_p1','D14C_p2']] = p
+                elif deg == 3:
+                    statprop.loc[i:i,['D14C_p0','D14C_p1','D14C_p2','D14C_p3']] = p
+                    
+            notNANs = ~np.isnan(bd)
+            if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
+                p = np.polyfit(layerbot[notNANs], bd[notNANs], deg) 
+                tmpdf.loc[i:i,'BulkDensity'] = polyfunc(incre, p, deg)
+                yhat = polyfunc(layerbot[notNANs], p, deg)
+                statprop.loc[i:i,'BD_R2'] = mysm.cal_R2(bd[notNANs], yhat)
+                statprop.loc[i:i,'BD_RMSE'] = mysm.cal_RMSE(bd[notNANs], yhat)
+                statprop.loc[i:i,'BD_pctERR'] = mysm.cal_pctERR(bd[notNANs], yhat)
+                if deg == 2:
+                    statprop.loc[i:i,['BD_p0','BD_p1','BD_p2']] = p
+                elif deg == 3:
+                    statprop.loc[i:i,['BD_p0','BD_p1','BD_p2','BD_p3']] = p
+                    
+            notNANs = ~np.isnan(pctC)
+            if sum(notNANs) >= 3: # otherwise not enough value! skip this variable
+                p = np.polyfit(layerbot[notNANs], pctC[notNANs], deg) 
+                tmpdf.loc[i:i,'pct_C'] = polyfunc(incre, p, deg)
+                yhat = polyfunc(layerbot[notNANs], p, deg)
+                statprop.loc[i:i,'pctC_R2'] = mysm.cal_R2(pctC[notNANs], yhat)
+                statprop.loc[i:i,'pctC_RMSE'] = mysm.cal_RMSE(pctC[notNANs], yhat)
+                statprop.loc[i:i,'pctC_pctERR'] = mysm.cal_pctERR(pctC[notNANs], yhat)
+                if deg == 2:
+                    statprop.loc[i:i,['pctC_p0','pctC_p1','pctC_p2']] = p
+                elif deg == 3:
+                    statprop.loc[i:i,['pctC_p0','pctC_p1','pctC_p2','pctC_p3']] = p
+                    
+            rep = incre.shape[0]
+            for name in ['Lon','Lat','MAT','MAP','VegTypeCode_Local','SoilOrder_LEN_USDA']:
+                tmpdf.loc[i:i, name] = np.repeat(data.loc[i:i, name].iloc[0], rep)
+            out = pd.concat([out, tmpdf],axis=0) 
+#            fig = plt.figure()
+#            ax = fig.add_axes([0.05,0.05,0.9,0.9])
+#            ax.scatter(d14C, layerbot, marker=marker.next())
+#            ax.scatter(d14C[notNANs], layerbot[notNANs], marker=marker.next())
+#            plt.gca().invert_yaxis()
+#            raw_input('press Enter to continue...') 
+            plt.close()
+    out = out.apply(lambda col : to_number(col) , axis = 1)  
     return out, statprop 
     
 def get_originalLayerdepth(df):
+    ''' pass in normalized depth, get back original depth (start from 0)
+    '''
     for idd in df.index.unique():
         print idd
         if df.loc[idd:idd, 'Layer_top_norm'].values[0] < 0:

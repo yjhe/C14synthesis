@@ -1816,7 +1816,43 @@ myplt.add_regress(deepdf.MAT.astype(float), deepdf.D14C_BulkLayer.astype(float))
 
 deepdf.plot(kind='scatter',x='MAP',y='D14C_BulkLayer')
 
-#%% examine interpolation
+#%% examine linear interpolation
+# linear interpolate to increments
+filename = 'Non_peat_data_synthesis.csv'
+data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
+data_linear, statprop_linear= prep.prep_lnrinterp(data, min_layer=4)
+data_linear_goodfit = data_linear.loc[statprop_linear.D14C_R2>0.7]
+out = []
+# calculate mean rmse at each layer
+for prof in data_linear_goodfit.index.unique():
+    m = 0; nlayer = 0
+    for n,(t,b) in enumerate(np.round(data.loc[prof:prof,['Layer_top_norm','Layer_bottom_norm']].values)):
+        #print n,t,b
+        dd = data_linear_goodfit.loc[prof:prof,'Layer_depth_incre'].values
+        idx = (dd <= b) & (dd >= t)
+        m += (np.nanmean(data_linear_goodfit.loc[prof:prof,'D14C_BulkLayer'].values[idx]) - \
+                        data.loc[prof:prof,'D14C_BulkLayer'].values[n])**2.
+        nlayer = n+1.
+    out += np.sqrt(m/nlayer),
+out = np.array(out)    
+
+
+plt.hist(out[~np.isnan(out)],bins=50)    
+plt.gca().set_xlim([0, 2000])
+
+# plot goodfit
+pid_goodfit = data_linear_goodfit[data_linear_goodfit.VegTypeCode_Local==2].index.unique()
+for p in pid_goodfit[1:10]:
+    fig = plt.figure()
+    ax = fig.add_axes([0.05,0.05,0.9,0.9])
+    ax.scatter(data.loc[p:p,'D14C_BulkLayer'], 
+               data.loc[p:p,['Layer_top_norm','Layer_bottom_norm']].mean(axis=1), marker='x')
+    ax.plot(data_linear_goodfit.loc[p:p,'D14C_BulkLayer'], 
+            data_linear_goodfit.loc[p:p,'Layer_depth_incre'])
+    plt.gca().invert_yaxis() 
+    plt.draw()
+    #raw_input('press Enter to continue...') 
+#%% examine exp interpolation
 # exp interpolate to increments
 filename = 'Non_peat_data_synthesis.csv'
 data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
@@ -1826,7 +1862,7 @@ out = []
 # calculate mean rmse at each layer
 for prof in data_exp_goodfit.index.unique():
     m = 0; nlayer = 0
-    for n,(t,b) in enumerate(np.round(data.loc[prof:prof,['Layer_top','Layer_bottom']].values)):
+    for n,(t,b) in enumerate(np.round(data.loc[prof:prof,['Layer_top_norm','Layer_bottom_norm']].values)):
         #print n,t,b
         dd = data_exp_goodfit.loc[prof:prof,'Layer_depth_incre'].values
         idx = (dd <= b) & (dd >= t)
@@ -1846,14 +1882,58 @@ for p in pid_goodfit[1:10]:
     fig = plt.figure()
     ax = fig.add_axes([0.05,0.05,0.9,0.9])
     ax.scatter(data.loc[p:p,'D14C_BulkLayer'], 
-               data.loc[p:p,['Layer_top','Layer_bottom']].mean(axis=1), marker='x')
+               data.loc[p:p,['Layer_top_norm','Layer_bottom_norm']].mean(axis=1), marker='x')
     ax.plot(data_exp_goodfit.loc[p:p,'D14C_BulkLayer'], 
             data_exp_goodfit.loc[p:p,'Layer_depth_incre'])
     plt.gca().invert_yaxis()
     plt.draw()
     #raw_input('press Enter to continue...') 
-    
+
+#%% examine 2ndorder_poly interpolation
+# poly interpolate to increments
+filename = 'Non_peat_data_synthesis.csv'
+data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
+data_poly, statprop_poly = prep.prep_polyinterp(data, 3, min_layer=4)
+data_poly_goodfit = data_poly.loc[statprop_poly.D14C_R2>0.7]
+out = []
+# calculate mean rmse at each layer
+for prof in data_poly_goodfit.index.unique():
+    m = 0; nlayer = 0
+    notNANs = ~data.loc[prof:prof,'D14C_BulkLayer'].isnull()
+    for n,(t,b) in enumerate(np.round(data.loc[prof:prof,['Layer_top','Layer_bottom']][notNANs].values)):
+        #print n,t,b
+        dd = data_poly_goodfit.loc[prof:prof,'Layer_depth_incre'].values
+        idx = (dd <= b) & (dd >= t)
+        m += (np.nanmean(data_poly_goodfit.loc[prof:prof,'D14C_BulkLayer'].values[idx]) - \
+                        data.loc[prof:prof,'D14C_BulkLayer'][notNANs].values[n])**2.
+        nlayer = n+1.
+        #print n,m
+    out += np.sqrt(m/nlayer),
+out = np.array(out)    
+np.mean(out)
+
+
+#plt.hist(out[~np.isnan(out)],bins=50) 
+plt.ylabel('# profiles')
+plt.hist(out[~np.isnan(out)],bins=50,cumulative=True,normed=1) 
+plt.xlabel('profile mean RMSE of each layer (permill)')
+plt.gca().set_xlim([0, 2000])
+
+# plot goodfit
+pid_goodfit = data_poly_goodfit.index.unique()
+for p in pid_goodfit[1:10]:
+    fig = plt.figure()
+    ax = fig.add_axes([0.05,0.05,0.9,0.9])
+    ax.scatter(data.loc[p:p,'D14C_BulkLayer'], 
+               data.loc[p:p,['Layer_t op','Layer_bottom']].mean(axis=1), marker='x')
+    ax.plot(data_poly_goodfit.loc[p:p,'D14C_BulkLayer'], 
+            data_poly_goodfit.loc[p:p,'Layer_depth_incre'])
+    plt.gca().invert_yaxis()
+    plt.draw()
+    #raw_input('press Enter to continue...') 
 #%% plot climate region (whittakers)
+    
+# plot whittakers
 filename = 'Non_peat_data_synthesis.csv'
 data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID', skiprows=[1]) 
 pid = data.index.unique()
@@ -1885,6 +1965,7 @@ prep.sweepdata(filename)
 
 #%% O_thickness exploratory analysis
 df = prep_Othickness_df()
+df = df[~df.O_thickness.isnull()]
 gr = df.groupby('VegTypeCodeStr_Local')
 y = 'O_thickness'
 means = gr.mean()[y]

@@ -57,43 +57,47 @@ fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
 
 #%% plot 14C profile of different biomes
 filename = 'Non_peat_data_synthesis.csv'
-data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID')  
+data = pd.read_csv(filename,encoding='iso-8859-1',index_col='ProfileID')
 biome = {1:'Boreal Forest',2:'Temperate Forest',3:'Tropical Forest',4:'Grassland', \
          5:'Cropland',6:'Shrublands',7:'Peatland',8:'Savannas',9:'Tundra',10:'Desert'}
+var = ['D14C_BulkLayer','BulkDensity','pct_C','totalSOCgcm3', 'tau']
+varlabel = [r"$\Delta14C$ ("+ u"\u2030)",
+            r"Bulk Density $(g\ cm^{-3})$",
+            r"percent C (%)",
+            r"SOC content $(gC\ cm^{-3})$",
+            r"turnover time (yr)"]
+# customize
 pltbiome = biome.keys()[8:10]
-fig, axes = plt.subplots(nrows=1, ncols=len(set(pltbiome)), figsize=(12,8))
+var1 = 1 # plot on the top x axis
+var2 = 2 # plot on the bottom x axis
+
 dum = 0
-var = ['pct_C','totalSOCgcm3', 'tau']
-varlabel = ['r"percent C $(%)$ (dashed line)"','r"SOC content $(g\ cm^{-3})$ (dashed line)"', 
-            'r"turnover time (yr) (dashed line)"']
-pltvar = 0 # plot on the bottom x axis
+fig, axes = plt.subplots(nrows=1, ncols=len(set(pltbiome)), figsize=(12,8))
 for i in set(pltbiome): # loop over biomes
     biomedataid = data[data.VegTypeCode_Local==i].index
-    ax1 = fig.axes[dum]
-    ax2 = ax1.twiny()
-    cm = plt.get_cmap('gist_rainbow')
+    ax1 = fig.axes[dum] # bottom
+    ax2 = ax1.twiny() # top
+    cm = plt.get_cmap('Set1')
     numcolr = len(set(biomedataid)) # no repeat in color
     ax1.set_color_cycle([cm(1.*jj/numcolr) for jj in range(numcolr)])
     ax2.set_color_cycle([cm(1.*jj/numcolr) for jj in range(numcolr)])
     for kk in set(biomedataid): # loop over profiles in current biome
         Y = (data[data.index==kk]['Layer_top_norm'].values.astype(float)+\
             data[data.index==kk]['Layer_bottom_norm'].values.astype(float))/2.0
-        X1 = data[data.index==kk]['D14C_BulkLayer'].astype(float)
-        if var[pltvar] == 'pct_C':    
-            X2 = data[data.index==kk]['pct_C'].astype(float)/100.0      
-        elif var[pltvar] == 'totalSOCgcm3':
+        X1 = data[data.index==kk][var[var1]].astype(float)
+        if var2 == 3:
             X2 = data[data.index==kk]['BulkDensity'].astype(float) * \
                  data[data.index==kk]['pct_C'].astype(float)/100.0 # total SOC g/cm3
-        elif var[pltvar] == 'tau':
-            X2 = data[data.index==kk]['tau'].astype(float) # tau (yr)
-        h1 = ax1.plot(X2,Y,':',lw=3,label='%s,%s,%s' % (data[data.index==kk].Site.values[0],\
+        else:
+            X2 = data[data.index==kk][var[var2]].astype(float) 
+        h1 = ax1.plot(X2,Y,'-.',lw=3,label='%s,%s,%s' % (data[data.index==kk].Site.values[0],\
             data[data.index==kk].Country.values[0],data[data.index==kk].State_City.values[0]))        
-        ax1.set_xlabel(eval(varlabel[pltvar]),color='g')
+        ax1.set_xlabel(varlabel[var2]+'(dashed line)',color='g')
         ax1.set_ylabel(r"Depth $(cm)$")
         for tl in ax1.get_xticklabels():
                 tl.set_color('g')
         h2 = ax2.plot(X1,Y)
-        ax2.set_xlabel(r"$\Delta14C$ ("+ u"\u2030)"+ "(solid line)")
+        ax2.set_xlabel(varlabel[var1]+'(solid line)')
     plt.gca().invert_yaxis()
     pylab.text(0.8, 0.1,biome[i]+"\n"+"N = "+str(len(set(biomedataid))),
                horizontalalignment='center',verticalalignment='center',
@@ -101,7 +105,7 @@ for i in set(pltbiome): # loop over biomes
     dum = dum + 1 
 fig.tight_layout() # Or equivalently,  "plt.tight_layout()"
 matplotlib.rcParams.update({'font.size': 10}) 
-fig.savefig('../figures/biome_profiles/withGCBdata/%s_%s.png'%(biome[pltbiome[0]],biome[pltbiome[1]]))
+fig.savefig('../figures/biome_profiles/withGCBdata/BD_pctC/%s_%s.png'%(biome[pltbiome[0]],biome[pltbiome[1]]))
 
 #%% plot 14C profile of different soil orders
 filename = 'Non_peat_data_synthesis.csv'
